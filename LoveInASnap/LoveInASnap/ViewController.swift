@@ -30,6 +30,7 @@
 
 import UIKit
 import Foundation
+import TesseractOCR
 
 class ViewController: UIViewController {
   
@@ -54,17 +55,63 @@ class ViewController: UIViewController {
   
   @IBAction func takePhoto(_ sender: Any) {
     view.endEditing(true)
+    presentImagePicker()
   }
   
   @IBAction func swapText(_ sender: Any) {
     view.endEditing(true)
+    // 1
+    guard let text = textView.text,
+      let findText = findTextField.text,
+      let replaceText = replaceTextField.text else {
+        return
+    }
+    
+    // 2
+    textView.text =
+      text.replacingOccurrences(of: findText, with: replaceText)
+    // 3
+    findTextField.text = nil
+    replaceTextField.text = nil
   }
   
   @IBAction func sharePoem(_ sender: Any) {
+    // 1
+    if textView.text.isEmpty {
+      return
+    }
+    // 2
+    let activityViewController = UIActivityViewController(activityItems:
+      [textView.text], applicationActivities: nil)
+    // 3
+    let excludeActivities:[UIActivityType] = [
+      .assignToContact,
+      .saveToCameraRoll,
+      .addToReadingList,
+      .postToFlickr,
+      .postToVimeo]
+    activityViewController.excludedActivityTypes = excludeActivities
+    // 4
+    present(activityViewController, animated: true)
   }
 
   // Tesseract Image Recognition
   func performImageRecognition(_ image: UIImage) {
+    // 1
+    if let tesseract = G8Tesseract(language: "eng+fra") {
+      // 2
+      tesseract.engineMode = .tesseractCubeCombined
+      // 3
+      tesseract.pageSegmentationMode = .auto
+      // 4
+      tesseract.image = image.g8_blackAndWhite()
+      // 5
+      tesseract.recognize()
+      // 6
+      textView.text = tesseract.recognizedText
+    }
+    // 7
+    activityIndicator.stopAnimating()
   }
   
   // The following methods handle the keyboard resignation/
@@ -98,5 +145,81 @@ extension ViewController: UITextFieldDelegate {
   
   func textFieldDidEndEditing(_ textField: UITextField) {
     moveViewDown()
+  }
+}
+
+// MARK: - UINavigationControllerDelegate
+extension ViewController: UINavigationControllerDelegate {
+}
+
+// MARK: - UIImagePickerControllerDelegate
+extension ViewController: UIImagePickerControllerDelegate {
+  func presentImagePicker() {
+    // 2
+    let imagePickerActionSheet = UIAlertController(title: "Snap/Upload Image",
+                                                   message: nil, preferredStyle: .actionSheet)
+    // 3
+    if UIImagePickerController.isSourceTypeAvailable(.camera) {
+      let cameraButton = UIAlertAction(title: "Take Photo",
+                                       style: .default) { (alert) -> Void in
+                                        let imagePicker = UIImagePickerController()
+                                        imagePicker.delegate = self
+                                        imagePicker.sourceType = .camera
+                                        self.present(imagePicker, animated: true)
+      }
+      imagePickerActionSheet.addAction(cameraButton)
+    }
+    let libraryButton = UIAlertAction(title: "Choose Existing",
+                                      style: .default) { (alert) -> Void in
+                                        let imagePicker = UIImagePickerController()
+                                        imagePicker.delegate = self
+                                        imagePicker.sourceType = .photoLibrary
+                                        self.present(imagePicker, animated: true)
+    }
+    imagePickerActionSheet.addAction(libraryButton)
+    // 2
+    let cancelButton = UIAlertAction(title: "Cancel", style: .cancel)
+    imagePickerActionSheet.addAction(cancelButton)
+    // 3
+    present(imagePickerActionSheet, animated: true)
+  }
+  
+  // 1
+  func imagePickerController(_ picker: UIImagePickerController,
+                             didFinishPickingMediaWithInfo info: [String : Any]) {
+    // 2
+    if let selectedPhoto = info[UIImagePickerControllerOriginalImage] as? UIImage,
+      let scaledImage = selectedPhoto.scaleImage(640) {
+      // 3
+      activityIndicator.startAnimating()
+      // 4
+      dismiss(animated: true, completion: {
+        self.performImageRecognition(scaledImage)
+      })
+    }
+  }
+
+}
+
+// MARK: - UIImage extension
+extension UIImage {
+  func scaleImage(_ maxDimension: CGFloat) -> UIImage? {
+    
+    var scaledSize = CGSize(width: maxDimension, height: maxDimension)
+    
+    if size.width > size.height {
+      let scaleFactor = size.height / size.width
+      scaledSize.height = scaledSize.width * scaleFactor
+    } else {
+      let scaleFactor = size.width / size.height
+      scaledSize.width = scaledSize.height * scaleFactor
+    }
+    
+    UIGraphicsBeginImageContext(scaledSize)
+    draw(in: CGRect(origin: .zero, size: scaledSize))
+    let scaledImage = UIGraphicsGetImageFromCurrentImageContext()
+    UIGraphicsEndImageContext()
+    
+    return scaledImage
   }
 }
